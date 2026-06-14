@@ -11,24 +11,37 @@ pnpm install
 pnpm start
 ```
 
-初始 8 行动态区（稳定、不闪）。**按 `o` 一次**跳到 `rows + 3` 行，观察绿色 STATIC 行是否在按键瞬间闪一下。stderr 打印 `[A2] overflow enter`。
+## 复现步骤
+
+1. 启动后**只有绿色 STATIC 一行**，stderr 提示开始计时
+2. 立刻 **Command+A 全选**（或拖选）绿色 STATIC 行，保持选区
+3. **5 秒后**自动插入 `rows + 3` 行动态区 → 观察选区是否消失
+4. **8 秒后**（+3s）动态区再 +1 行 → 再次观察选区
+5. 之后**每 3 秒**继续 +1 行 → 观察 Static 是否持续闪
 
 按 `q` 退出。
 
 ## 如何判断 Static 是否被刷新
 
-1. **Command A 全选**或鼠标拖选绿色 STATIC 行，保持选区
-2. 按 `o` 进入超屏
-3. **选区消失** → Static 被重写（本 demo：按 `o` 瞬间 `clearTerminal`）
-4. **选区保留** → Static 未重写
+| 时机 | 选区消失 | 含义 |
+|---|---|---|
+| 5s 等待期间 | 否 | 仅 Static，未超屏 |
+| 5s **第一次进入超屏** | **否** | `isOverflowing && hadPreviousFrame` 成立，但选区仍保留（实测） |
+| 8s **第二次**（已超屏后再 +1 行） | **是** | `wasOverflowing`（A1）→ `clearTerminal`，Static 被重写 |
+| 之后每 3s +1 行 | 是 | A1 持续 `clearTerminal` |
 
-**本 demo 预期**：按 `o` 前选区应保留；按 `o` 瞬间选区应消失。
+**本 demo 实测结论**：第一次超屏选区不消失，第二次才消失 — 与 Ink 7 条件分支一致：
+
+- **A2**（`isOverflowing && hadPreviousFrame`）：进入超屏那一帧；选区检测上**不一定**立刻消失
+- **A1**（`wasOverflowing`）：已超屏后每帧继续 clear；**选区会消失**
+
+若首帧就直接超屏（`hadPreviousFrame === false`），A2 也不触发 clear — 不会闪。
 
 ## 教程
 
-与 A1 区别：A1 是「已经超屏后每帧继续 clear」；A2 是「进入超屏的那一帧」。按 `o` 前 `lastOutputHeight > 0` 且本帧 `outputHeight > rows`，满足 A2。
+与 A1 区别：A1 是「已经超屏后每帧继续 clear」；A2 是「进入超屏的那一帧」。5s 时 `previousOutputHeight > 0` 且本帧 `outputHeight > rows`，满足 A2；8s 起上一帧已超屏，落入 A1。
 
 ## 注意事项
 
 - 必须在 TTY 跑
-- 若按 o 后继续 tick，后续帧会落入 A1（wasOverflowing）
+- stderr 会打印 `[A2]` / `[A1]` 阶段日志
